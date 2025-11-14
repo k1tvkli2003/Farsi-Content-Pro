@@ -5,3 +5,51 @@
 body {
   font-family: 'Vazirmatn', sans-serif;
 }
+
+/* App Loader Styles */
+#app-loader {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.5s ease-out;
+}
+
+#app-loader > div {
+  text-align: center;
+}
+
+#app-loader .loader-spinner {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 2rem;
+  border: 3px solid rgba(20, 184, 166, 0.3);
+  border-top-color: #14b8a6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+#app-loader h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #14b8a6, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+  font-family: 'Vazirmatn', sans-serif;
+}
+
+#app-loader p {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-family: 'Vazirmatn', sans-serif;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

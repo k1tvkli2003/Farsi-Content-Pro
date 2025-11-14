@@ -17,7 +17,7 @@ const LoadingSkeleton: React.FC = () => (
     <div className="flex flex-col items-center justify-center py-12 space-y-6">
         <div className="relative">
             <div className="w-16 h-16 border-4 border-gray-700 border-t-teal-500 rounded-full animate-spin"></div>
-            <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-b-cyan-500 rounded-full animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+            <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-b-cyan-500 rounded-full animate-spin [animation-direction:reverse] [animation-duration:1.5s]"></div>
         </div>
         <div className="text-center space-y-2" dir="rtl">
             <div className="flex items-center justify-center gap-2">
@@ -30,7 +30,7 @@ const LoadingSkeleton: React.FC = () => (
         </div>
         <div className="w-full max-w-xs">
             <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-500 rounded-full animate-pulse" style={{width: '60%', animation: 'loading-bar 2s ease-in-out infinite'}}></div>
+                <div className="h-full w-3/5 bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-500 rounded-full animate-pulse [animation:loading-bar_2s_ease-in-out_infinite]"></div>
             </div>
         </div>
         <style>{`
