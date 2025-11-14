@@ -150,7 +150,15 @@ const App: React.FC = () => {
                 setOutputData(result);
             }
         } catch (e: any) {
-            setError(e.message || 'یک خطای ناشناخته رخ داد.');
+            const message = e.message || 'یک خطای ناشناخته رخ داد.';
+            setError(message);
+
+            // If both primary و مدل fallback (flash) جواب ندادند یا هیچ کلید فعالی نداریم،
+            // پاپ‌آپ عدم دسترسی به هوش مصنوعی را هم نشان بده.
+            if (message.includes('هیچ کلید API') || message.includes('در حال حاضر هیچ کلید API فعالی') || message.includes('کلیدهای هوش مصنوعی')) {
+                setHasWorkingApi(false);
+                setShowApiErrorPopup(true);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -195,7 +203,13 @@ const App: React.FC = () => {
                 setOutputData(result);
             }
         } catch (e: any) {
-            setError(e.message || 'یک خطای ناشناخته رخ داد.');
+            const message = e.message || 'یک خطای ناشناخته رخ داد.';
+            setError(message);
+
+            if (message.includes('هیچ کلید API') || message.includes('در حال حاضر هیچ کلید API فعالی') || message.includes('کلیدهای هوش مصنوعی')) {
+                setHasWorkingApi(false);
+                setShowApiErrorPopup(true);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -226,7 +240,13 @@ const App: React.FC = () => {
             setOutputData(result);
             setPartialOutput('');
         } catch (e: any) {
-            setError(e.message || 'خطا در اصلاح متن.');
+            const message = e.message || 'خطا در اصلاح متن.';
+            setError(message);
+
+            if (message.includes('هیچ کلید API') || message.includes('در حال حاضر هیچ کلید API فعالی') || message.includes('کلیدهای هوش مصنوعی')) {
+                setHasWorkingApi(false);
+                setShowApiErrorPopup(true);
+            }
         } finally {
             setIsRefining(false);
         }

@@ -26,6 +26,15 @@ let currentClientIndex = 0;
 let healthyClientIndices: number[] | null = null;
 let hasHealthCheckRun = false;
 
+// Indices of clients that have been marked unhealthy during this session (runtime key errors)
+const disabledClientIndices = new Set<number>();
+
+// Once we discover that the primary model (gemini-2.5-pro) is unstable but flash works,
+// we permanently switch all remaining calls in this session to gemini-2.5-flash.
+const PRIMARY_MODEL = 'gemini-2.5-pro';
+const FALLBACK_MODEL = 'gemini-2.5-flash';
+let forceFlashForAllCalls = false;
+
 export interface ApiHealthSummary {
     totalCount: number;
     healthyCount: number;
@@ -76,29 +85,156 @@ export async function healthCheckAllApiKeys(): Promise<ApiHealthSummary> {
     };
 }
 
-function getAiClient() {
+function getClientPoolIndices(): number[] {
+    let baseIndices: number[];
+
+    if (hasHealthCheckRun) {
+        if (healthyClientIndices && healthyClientIndices.length > 0) {
+            baseIndices = healthyClientIndices;
+        } else {
+            baseIndices = [];
+        }
+    } else {
+        baseIndices = aiClients.map((_, index) => index);
+    }
+
+    return baseIndices.filter(index => !disabledClientIndices.has(index));
+}
+
+interface AiClientWithIndex {
+    client: GoogleGenAI;
+    index: number;
+}
+
+function getAiClientInternal(): AiClientWithIndex {
     if (aiClients.length === 0) {
         throw new Error('هیچ کلید API برای Gemini پیکربندی نشده است. لطفاً GEMINI_API_KEYS را تنظیم کن.');
     }
 
-    // If health check has run and there are healthy keys, only rotate over those.
-    let poolIndices: number[];
-    if (hasHealthCheckRun) {
-        if (healthyClientIndices && healthyClientIndices.length > 0) {
-            poolIndices = healthyClientIndices;
-        } else {
-            // Health check ran and no key worked
-            throw new Error('در حال حاضر هیچ کلید API فعالی در دسترس نیست. امیرکیوان باید کلیدهای جدید اضافه کند.');
-        }
-    } else {
-        // Health check not run yet: use all keys in round-robin
-        poolIndices = aiClients.map((_, index) => index);
+    const poolIndices = getClientPoolIndices();
+
+    if (poolIndices.length === 0) {
+        // All keys are either unhealthy from health check or have been disabled at runtime
+        throw new Error('در حال حاضر هیچ کلید API فعالی در دسترس نیست. امیرکیوان باید کلیدهای جدید اضافه کند.');
     }
 
     const indexInPool = currentClientIndex % poolIndices.length;
     const clientIndex = poolIndices[indexInPool];
     currentClientIndex = (currentClientIndex + 1) % poolIndices.length;
-    return aiClients[clientIndex];
+    return { client: aiClients[clientIndex], index: clientIndex };
+}
+
+// Backwards-compatible helper for places that only need the client instance
+function getAiClient(): GoogleGenAI {
+    return getAiClientInternal().client;
+}
+
+function markClientAsDisabled(index: number) {
+    disabledClientIndices.add(index);
+    if (healthyClientIndices) {
+        healthyClientIndices = healthyClientIndices.filter(i => i !== index);
+    }
+}
+
+function isApiKeyError(error: any): boolean {
+    if (!error) return false;
+
+    const anyErr = error as any;
+    const status = anyErr.status ?? anyErr.code;
+    if (status === 401 || status === 403 || status === 'UNAUTHENTICATED' || status === 'PERMISSION_DENIED') {
+        return true;
+    }
+
+    const message = String(anyErr.message || '').toLowerCase();
+
+    const keyIndicators = [
+        'api key',
+        'apikey',
+        'invalid api key',
+        'invalid key',
+        'key is invalid',
+        'no api key',
+        'gemini_api_keys',
+        'billing',
+        'unauthorized',
+        'permission denied',
+        'هیچ کلید api فعالی',
+        'کلیدهای هوش مصنوعی'
+    ];
+
+    return keyIndicators.some(indicator => message.includes(indicator));
+}
+
+async function withClientForModel<T>(
+    modelName: string,
+    operation: (client: GoogleGenAI, modelName: string, clientIndex: number) => Promise<T>
+): Promise<T> {
+    let lastError: any = null;
+
+    // We never want to loop forever; at most try each client once for this call.
+    const maxAttempts = aiClients.length;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        let aiWithIndex: AiClientWithIndex;
+        try {
+            aiWithIndex = getAiClientInternal();
+        } catch (err) {
+            // No available clients
+            lastError = lastError || err;
+            break;
+        }
+
+        try {
+            return await operation(aiWithIndex.client, modelName, aiWithIndex.index);
+        } catch (err) {
+            // If this looks like a key-related error, mark this client as unhealthy
+            if (isApiKeyError(err)) {
+                markClientAsDisabled(aiWithIndex.index);
+                lastError = err;
+                continue; // Try next available client
+            }
+
+            // For non-key errors (network, server, model issues), propagate immediately
+            throw err;
+        }
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+
+    // Fallback safety – should normally be unreachable
+    throw new Error('در حال حاضر هیچ کلید API فعالی در دسترس نیست. امیرکیوان باید کلیدهای جدید اضافه کند.');
+}
+
+async function callWithProThenFlash<T>(
+    operation: (client: GoogleGenAI, modelName: string) => Promise<T>
+): Promise<T> {
+    // If we already discovered that pro is unstable but flash works, always go straight to flash.
+    if (forceFlashForAllCalls) {
+        return withClientForModel(FALLBACK_MODEL, (client) => operation(client, FALLBACK_MODEL));
+    }
+
+    try {
+        return await withClientForModel(PRIMARY_MODEL, (client) => operation(client, PRIMARY_MODEL));
+    } catch (error) {
+        // If the failure is clearly due to API keys, trying another model will not help.
+        if (isApiKeyError(error)) {
+            throw error;
+        }
+
+        // Primary model had a non-key error (capacity, transient server failure, etc.).
+        // Try the lighter flash model as a fallback.
+        try {
+            const result = await withClientForModel(FALLBACK_MODEL, (client) => operation(client, FALLBACK_MODEL));
+            // If flash worked, switch all future calls in this session to flash.
+            forceFlashForAllCalls = true;
+            return result;
+        } catch (fallbackError) {
+            // If flash also failed, bubble up that error so the UI can show the global error popup.
+            throw fallbackError;
+        }
+    }
 }
 
 // Check if user is requesting a long article
@@ -194,9 +330,6 @@ function enforceLineLimit(text: string, mode: Mode, inputText: string): string {
 export async function generateContent(params: GenerateContentParams): Promise<OutputData> {
     const { mode, inputText, useSearchGrounding, isThinkingMode } = params;
     const selectedTags = 'selectedTags' in params ? (params as any).selectedTags : undefined;
-    const ai = getAiClient();
-
-    const modelName = 'gemini-2.5-pro';
     const prompt = generatePrompt(mode, inputText, selectedTags);
     
     const config: any = {};
@@ -211,52 +344,54 @@ export async function generateContent(params: GenerateContentParams): Promise<Ou
         config.tools = [{ googleSearch: {} }];
     }
 
-    const response = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: config
+    return callWithProThenFlash(async (client, modelName) => {
+        const response = await client.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: config
+        });
+
+        const responseText = typeof (response as any).text === 'function'
+            ? (response as any).text()
+            : (response as any).text;
+
+        if (!responseText) {
+            throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
+        }
+
+        let text: string = responseText;
+
+        if (mode === Mode.GENERATE_HEADLINES) {
+            try {
+                const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(jsonString) as string[];
+            } catch (e) {
+                console.error("Failed to parse headlines JSON:", e);
+                const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return cleanedText.split('\n').filter(line => line.trim() !== '' && !['[',']'].includes(line.trim()));
+            }
+        } else if (mode === Mode.FIND_PROVERBS) {
+            try {
+                const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(jsonString) as ProverbSuggestion[];
+            } catch (e) {
+                console.error("Failed to parse proverbs JSON:", e);
+                throw new Error("پاسخ دریافت شده در قالب مورد انتظار نبود. لطفا دوباره تلاش کنید.");
+            }
+        } else if (mode === Mode.FIND_POEMS) {
+            try {
+                const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(jsonString) as PoemSuggestion[];
+            } catch (e) {
+                console.error("Failed to parse poems JSON:", e);
+                throw new Error("پاسخ دریافت شده در قالب مورد انتظار نبود. لطفا دوباره تلاش کنید.");
+            }
+        }
+
+        // Apply line limit for WRITE_ARTICLE mode
+        text = enforceLineLimit(text, mode, inputText);
+        return text;
     });
-    
-    const responseText = typeof (response as any).text === 'function'
-        ? (response as any).text()
-        : (response as any).text;
-
-    if (!responseText) {
-        throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
-    }
-
-    let text: string = responseText;
-
-    if (mode === Mode.GENERATE_HEADLINES) {
-        try {
-            const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(jsonString) as string[];
-        } catch (e) {
-            console.error("Failed to parse headlines JSON:", e);
-            const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            return cleanedText.split('\n').filter(line => line.trim() !== '' && !['[',']'].includes(line.trim()));
-        }
-    } else if (mode === Mode.FIND_PROVERBS) {
-        try {
-            const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(jsonString) as ProverbSuggestion[];
-        } catch (e) {
-            console.error("Failed to parse proverbs JSON:", e);
-            throw new Error("پاسخ دریافت شده در قالب مورد انتظار نبود. لطفا دوباره تلاش کنید.");
-        }
-    } else if (mode === Mode.FIND_POEMS) {
-        try {
-            const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(jsonString) as PoemSuggestion[];
-        } catch (e) {
-            console.error("Failed to parse poems JSON:", e);
-            throw new Error("پاسخ دریافت شده در قالب مورد انتظار نبود. لطفا دوباره تلاش کنید.");
-        }
-    }
-
-    // Apply line limit for WRITE_ARTICLE mode
-    text = enforceLineLimit(text, mode, inputText);
-    return text;
 }
 
 // Streaming version for text-based modes
@@ -273,7 +408,7 @@ export async function generateContentStream(
     }
 
     const ai = getAiClient();
-    const modelName = 'gemini-2.5-pro';
+    const modelName = forceFlashForAllCalls ? FALLBACK_MODEL : PRIMARY_MODEL;
     const prompt = generatePrompt(mode, inputText, selectedTags);
     
     const config: any = {};
@@ -307,8 +442,6 @@ export async function generateContentStream(
 // Refinement function for post-output editing
 export async function refineContent(params: RefineContentParams): Promise<string> {
     const { originalInput, currentOutput, refinementInstruction } = params;
-    const ai = getAiClient();
-
     const prompt = `تو یک دستیار نوشتاری فارسی هستی که با نثر ادبی و زیبا می‌نویسد.
 
 درخواست اولیه کاربر: "${originalInput}"
@@ -329,21 +462,23 @@ ${currentOutput}
 
 فقط متن نهایی را برگردان، بدون توضیح اضافی.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
-        contents: prompt,
-        config: {}
+    return callWithProThenFlash(async (client, modelName) => {
+        const response = await client.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {}
+        });
+
+        const responseText = typeof (response as any).text === 'function'
+            ? (response as any).text()
+            : (response as any).text;
+
+        if (!responseText) {
+            throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
+        }
+
+        return responseText;
     });
-
-    const responseText = typeof (response as any).text === 'function'
-        ? (response as any).text()
-        : (response as any).text;
-
-    if (!responseText) {
-        throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
-    }
-
-    return responseText;
 }
 
 // Streaming refinement
@@ -352,8 +487,6 @@ export async function refineContentStream(
     onChunk: (chunk: string) => void
 ): Promise<string> {
     const { originalInput, currentOutput, refinementInstruction } = params;
-    const ai = getAiClient();
-
     const prompt = `تو یک دستیار نوشتاری فارسی هستی که با نثر ادبی و زیبا می‌نویسد.
 
 درخواست اولیه کاربر: "${originalInput}"
@@ -374,8 +507,12 @@ ${currentOutput}
 
 فقط متن نهایی را برگردان، بدون توضیح اضافی.`;
 
+    const ai = getAiClient();
+
+    const modelName = forceFlashForAllCalls ? FALLBACK_MODEL : PRIMARY_MODEL;
+
     const response = await ai.models.generateContentStream({
-        model: 'gemini-2.5-pro',
+        model: modelName,
         contents: prompt,
         config: {}
     });
@@ -425,48 +562,56 @@ export async function sendChatMessage(
         (config as any).thinking = { budgetTokens: 1024 };
     }
 
-    const ai = getAiClient();
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
-        contents: conversationText,
-        config
+    return callWithProThenFlash(async (client, modelName) => {
+        const response = await client.models.generateContent({
+            model: modelName,
+            contents: conversationText,
+            config
+        });
+
+        const responseText = typeof (response as any).text === 'function'
+            ? (response as any).text()
+            : (response as any).text;
+
+        if (!responseText) {
+            throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
+        }
+
+        return responseText;
     });
-
-    const responseText = typeof (response as any).text === 'function'
-        ? (response as any).text()
-        : (response as any).text;
-
-    if (!responseText) {
-        throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
-    }
-
-    return responseText;
 }
 
 // Generate short personal message (for welcome popup or header subtitle)
 export async function generatePersonalMessage(type: 'welcome' | 'subtitle'): Promise<string> {
-    const ai = getAiClient();
-    
     const prompts = {
         welcome: `تو نقش "امیرکیوان", پسر مهربان علی هستی که مستقیماً با باباجونش صحبت می‌کنی. یک جمله خیلی کوتاه و صمیمی (حداکثر ۱۰-۱۵ کلمه) برای خوشامدگویی به باباجون بنویس. حتماً از "من" و "تو" استفاده کن، نه شخص سوم. خروجی باید کاملاً به زبان فارسی باشد و از نوشتن کلمات یا عبارات انگلیسی خودداری کن. مثال: "باباجون سلام! امیدوارم امروز روز خوبی داشته باشی" یا "باباجون عزیز، چه خوب که اومدی!" یا "سلام بابا! خوشحالم که اینجایی" - فقط یک جمله فارسی بنویس، بدون توضیح اضافی.`,
         subtitle: `تو نقش "امیرکیوان", پسر مهربان علی هستی. یک جمله خیلی کوتاه و صمیمی (حداکثر ۱۰-۱۵ کلمه) برای نوشتن در بالای صفحه بنویس که نشان‌دهنده محبت و علاقه‌ات به باباجون باشه. خروجی باید کاملاً به زبان فارسی باشد و از نوشتن کلمات یا عبارات انگلیسی خودداری کن. مثال: "بابا، خیلی دوستت دارم" یا "همیشه کنارتم باباجون" یا "برای بهترین بابای دنیا" - فقط یک جمله فارسی بنویس، بدون توضیح اضافی.`
     };
+    const modelName = FALLBACK_MODEL;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompts[type],
-        config: {}
+    const response = await withClientForModel(modelName, async (client, selectedModel) => {
+        const res = await client.models.generateContent({
+            model: selectedModel,
+            contents: prompts[type],
+            config: {}
+        });
+
+        const responseText = typeof (res as any).text === 'function'
+            ? (res as any).text()
+            : (res as any).text;
+
+        if (!responseText) {
+            throw new Error('پاسخی از مدل دریافت نشد. لطفاً دوباره تلاش کنید.');
+        }
+
+        return responseText as string;
     });
 
-    const responseText = typeof (response as any).text === 'function'
-        ? (response as any).text()
-        : (response as any).text;
-
-    if (!responseText) {
+    if (!response) {
         return type === 'welcome' ? 'باباجون سلام! خوش اومدی' : 'برای بهترین بابای دنیا';
     }
 
-    return responseText.trim();
+    return (response as string).trim();
 }
 
 // Streaming chat
@@ -506,8 +651,11 @@ export async function sendChatMessageStream(
     }
 
     const ai = getAiClient();
+
+    const modelName = forceFlashForAllCalls ? FALLBACK_MODEL : PRIMARY_MODEL;
+
     const response = await ai.models.generateContentStream({
-        model: 'gemini-2.5-pro',
+        model: modelName,
         contents: conversationText,
         config
     });
