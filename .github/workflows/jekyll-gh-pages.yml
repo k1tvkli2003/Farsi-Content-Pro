@@ -1,12 +1,13 @@
 # Sample workflow for building and deploying a Jekyll site to GitHub Pages
-name: Deploy Jekyll with GitHub Pages dependencies preinstalled
+name: (DISABLED) Deploy Jekyll with GitHub Pages dependencies preinstalled
+
+# NOTE:
+# این ورک‌فلو قبلاً برای Jekyll بود، ولی الان اپ با Vite ساخته و دیپلوی می‌شود (فایل deploy.yml).
+# برای جلوگیری از تداخل و این‌که GitHub Pages دوباره index.html خام را با <script src="index.tsx"> منتشر نکند،
+# این ورک‌فلو را از روی push غیرفعال می‌کنیم و فقط به صورت دستی قابل اجراست.
 
 on:
-  # Runs on pushes targeting the default branch
-  push:
-    branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
+  # فقط اجرای دستی از تب Actions (دیگر روی push اجرا نمی‌شود)
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
