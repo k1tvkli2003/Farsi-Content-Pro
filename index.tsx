@@ -14,12 +14,3 @@ root.render(
     <App />
   </React.StrictMode>
 );
-
-// Remove initial loader after app mounts
-setTimeout(() => {
-  const loader = document.getElementById('app-loader');
-  if (loader) {
-    loader.style.opacity = '0';
-    setTimeout(() => loader.remove(), 500);
-  }
-}, 100);

@@ -20,7 +20,6 @@ const App: React.FC = () => {
     const [isThinkingMode, setIsThinkingMode] = useState<boolean>(false);
     const [welcomeMessage, setWelcomeMessage] = useState<string>('');
     const [headerSubtitle, setHeaderSubtitle] = useState<string>('');
-    const [isInitializing, setIsInitializing] = useState<boolean>(true);
     const [showWelcomePopup, setShowWelcomePopup] = useState<boolean>(false);
     const [hasWorkingApi, setHasWorkingApi] = useState<boolean>(true);
     const [showApiErrorPopup, setShowApiErrorPopup] = useState<boolean>(false);
@@ -75,10 +74,6 @@ const App: React.FC = () => {
                 setShowApiErrorPopup(true);
                 setWelcomeMessage('باباجون سلام! فعلاً هوش مصنوعی من قهر کرده و جواب نمی‌ده، ولی خود صفحه در دسترسه.');
                 setHeaderSubtitle('اگر این وضعیت ادامه داشت، به امیرکیوان بگو تا کلیدها را چک کند.');
-            } finally {
-                if (isMounted) {
-                    setIsInitializing(false);
-                }
             }
         };
 
@@ -248,10 +243,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center p-4 selection:bg-teal-300 selection:text-teal-900">
-            {/* Show nothing until initialization is done */}
-            {isInitializing ? null : (
-                <>
-                    <Header subtitle={headerSubtitle} />
+            <Header subtitle={headerSubtitle} />
 
                     {/* Global popup when no API key is working */}
                     {showApiErrorPopup && (
@@ -425,8 +417,6 @@ const App: React.FC = () => {
                     >
                         <Chatbot onClose={() => setShowChat(false)} />
                     </div>
-                </>
-            )}
         </div>
     );
 };
