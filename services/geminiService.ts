@@ -22,10 +22,83 @@ if (apiKeys.length === 0) {
 const aiClients = apiKeys.map(key => new GoogleGenAI({ apiKey: key }));
 let currentClientIndex = 0;
 
+// Indices of clients that passed the last health check. If null, health check has not run yet.
+let healthyClientIndices: number[] | null = null;
+let hasHealthCheckRun = false;
+
+export interface ApiHealthSummary {
+    totalCount: number;
+    healthyCount: number;
+}
+
+/**
+ * Runs a lightweight health check against all configured API keys.
+ * Any key that successfully answers a tiny test prompt is considered "healthy".
+ * The result is cached in-memory and used by getAiClient() for routing.
+ */
+export async function healthCheckAllApiKeys(): Promise<ApiHealthSummary> {
+    if (aiClients.length === 0) {
+        healthyClientIndices = [];
+        hasHealthCheckRun = true;
+        return { totalCount: 0, healthyCount: 0 };
+    }
+
+    const results = await Promise.allSettled(
+        aiClients.map(async (client, index) => {
+            try {
+                // Use a very small, cheap request just to verify the key works.
+                await client.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: 'سلام! این یک تست خیلی کوتاه برای بررسی سلامت کلید API است. فقط یک کلمه «سلام» جواب بده.',
+                    config: {}
+                });
+                return true;
+            } catch (err) {
+                console.error(`API key health check failed for index ${index}:`, err);
+                throw err;
+            }
+        })
+    );
+
+    const newHealthy: number[] = [];
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            newHealthy.push(index);
+        }
+    });
+
+    healthyClientIndices = newHealthy;
+    hasHealthCheckRun = true;
+
+    return {
+        totalCount: aiClients.length,
+        healthyCount: newHealthy.length,
+    };
+}
+
 function getAiClient() {
-    const client = aiClients[currentClientIndex];
-    currentClientIndex = (currentClientIndex + 1) % aiClients.length;
-    return client;
+    if (aiClients.length === 0) {
+        throw new Error('هیچ کلید API برای Gemini پیکربندی نشده است. لطفاً GEMINI_API_KEYS را تنظیم کن.');
+    }
+
+    // If health check has run and there are healthy keys, only rotate over those.
+    let poolIndices: number[];
+    if (hasHealthCheckRun) {
+        if (healthyClientIndices && healthyClientIndices.length > 0) {
+            poolIndices = healthyClientIndices;
+        } else {
+            // Health check ran and no key worked
+            throw new Error('در حال حاضر هیچ کلید API فعالی در دسترس نیست. امیرکیوان باید کلیدهای جدید اضافه کند.');
+        }
+    } else {
+        // Health check not run yet: use all keys in round-robin
+        poolIndices = aiClients.map((_, index) => index);
+    }
+
+    const indexInPool = currentClientIndex % poolIndices.length;
+    const clientIndex = poolIndices[indexInPool];
+    currentClientIndex = (currentClientIndex + 1) % poolIndices.length;
+    return aiClients[clientIndex];
 }
 
 // Check if user is requesting a long article

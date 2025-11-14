@@ -5,7 +5,7 @@ import InputPanel from './components/InputPanel';
 import ModeSelector from './components/ModeSelector';
 import OutputPanel from './components/OutputPanel';
 import { MODES, MODE_TAGS } from './constants';
-import { generateContent, generateContentStream, generatePersonalMessage, refineContentStream } from './services/geminiService';
+import { generateContent, generateContentStream, generatePersonalMessage, healthCheckAllApiKeys, refineContentStream } from './services/geminiService';
 import { Mode, OutputData, PromptTag } from './types';
 
 const App: React.FC = () => {
@@ -22,6 +22,8 @@ const App: React.FC = () => {
     const [headerSubtitle, setHeaderSubtitle] = useState<string>('');
     const [isInitializing, setIsInitializing] = useState<boolean>(true);
     const [showWelcomePopup, setShowWelcomePopup] = useState<boolean>(false);
+    const [hasWorkingApi, setHasWorkingApi] = useState<boolean>(true);
+    const [showApiErrorPopup, setShowApiErrorPopup] = useState<boolean>(false);
     const [selectedTagsByMode, setSelectedTagsByMode] = useState<Record<Mode, string[]>>({
         [Mode.GENERATE_HEADLINES]: [],
         [Mode.FIND_POEMS]: [],
@@ -36,29 +38,54 @@ const App: React.FC = () => {
     const activeSelectedTags = selectedTagsByMode[selectedMode] || [];
     const thinkingSupported = activeModeConfig.supportsThinkingMode;
 
-    // Generate welcome message and header subtitle on mount
+    // Run API health check and generate welcome message / subtitle on mount
     useEffect(() => {
-        const initializeMessages = async () => {
+        let isMounted = true;
+
+        const initialize = async () => {
             try {
+                // 1) Health check all API keys once at startup
+                const { healthyCount, totalCount } = await healthCheckAllApiKeys();
+                if (!isMounted) return;
+                if (totalCount === 0 || healthyCount === 0) {
+                    // No usable API keys – show friendly global popup and skip AI-based welcome
+                    setHasWorkingApi(false);
+                    setShowApiErrorPopup(true);
+                    setWelcomeMessage('باباجون سلام! الان هیچ‌کدوم از کلیدهای هوش مصنوعی من کار نمی‌کنن، ولی خود سایت بازه.');
+                    setHeaderSubtitle('الان دستم برای هوش مصنوعی بسته‌ست؛ به‌محض این‌که کلیدهای جدید تنظیم کنم، دوباره راه می‌افتیم.');
+                    return;
+                }
+
+                setHasWorkingApi(true);
+
+                // 2) If we have at least one working key, generate welcome + subtitle using AI
                 const [welcome, subtitle] = await Promise.all([
                     generatePersonalMessage('welcome'),
                     generatePersonalMessage('subtitle')
                 ]);
-                // Wait a tiny bit to ensure everything is ready
+                if (!isMounted) return;
                 setWelcomeMessage(welcome);
                 setHeaderSubtitle(subtitle);
-                setIsInitializing(false);
-                // Show popup after UI is rendered
+                // Show welcome popup after UI is rendered
                 setTimeout(() => setShowWelcomePopup(true), 100);
             } catch (error) {
-                console.error('Failed to generate welcome messages:', error);
-                setWelcomeMessage('باباجون سلام! خوش اومدی');
-                setHeaderSubtitle('برای بهترین بابای دنیا');
-                setIsInitializing(false);
-                setTimeout(() => setShowWelcomePopup(true), 100);
+                console.error('Failed to initialize API health or welcome messages:', error);
+                if (!isMounted) return;
+                setHasWorkingApi(false);
+                setShowApiErrorPopup(true);
+                setWelcomeMessage('باباجون سلام! فعلاً هوش مصنوعی من قهر کرده و جواب نمی‌ده، ولی خود صفحه در دسترسه.');
+                setHeaderSubtitle('اگر این وضعیت ادامه داشت، به امیرکیوان بگو تا کلیدها را چک کند.');
+            } finally {
+                if (isMounted) {
+                    setIsInitializing(false);
+                }
             }
         };
-        initializeMessages();
+
+        initialize();
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     const handleToggleTag = useCallback((tagId: string) => {
@@ -221,13 +248,51 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center p-4 selection:bg-teal-300 selection:text-teal-900">
-            {/* Show nothing until messages are generated */}
+            {/* Show nothing until initialization is done */}
             {isInitializing ? null : (
                 <>
                     <Header subtitle={headerSubtitle} />
+
+                    {/* Global popup when no API key is working */}
+                    {showApiErrorPopup && (
+                        <div
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                            onClick={() => setShowApiErrorPopup(false)}
+                        >
+                            <div
+                                className="bg-gray-800 border border-rose-500/60 rounded-2xl p-8 max-w-md w-full shadow-2xl"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="text-center space-y-4" dir="rtl">
+                                    <div className="w-16 h-16 mx-auto bg-gradient-to-br from-rose-500 to-orange-400 rounded-full flex items-center justify-center text-white">
+                                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={2}
+                                                    d="M12 9v3m0 4h.01M4.293 17.293A8 8 0 1119.707 6.707 8 8 0 014.293 17.293z"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <p className="text-lg text-gray-100 leading-relaxed">
+                                        باباجون عزیز، الان هیچ‌کدوم از کلیدهای هوش مصنوعی من جواب نمی‌دن، برای همین فعلاً نمی‌تونم برات محتوا تولید کنم.
+                                    </p>
+                                    <p className="text-sm text-gray-400">
+                                        به‌محض این‌که امیرکیوان کلیدهای جدید رو تنظیم کنه، همه‌چیز دوباره راه می‌افته. اگر خواستی، بعداً یه سر دیگه بهم بزن یا صفحه رو رفرش کن.
+                                    </p>
+                                    <button
+                                        onClick={() => setShowApiErrorPopup(false)}
+                                        className="mt-2 w-full bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-600 hover:to-orange-600 text-white rounded-lg py-2 px-4 transition-all duration-200 font-medium"
+                                    >
+                                        باشه، اشکالی نداره
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 					
                     {/* Welcome Popup */}
-                    {showWelcomePopup && (
+                    {showWelcomePopup && hasWorkingApi && (
                         <div
                             className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                             onClick={() => setShowWelcomePopup(false)}
