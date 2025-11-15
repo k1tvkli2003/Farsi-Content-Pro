@@ -277,7 +277,19 @@ function generatePrompt(mode: Mode, inputText: string, selectedTags?: PromptTag[
             basePrompt = `متن فارسی زیر را با نثری ادبی، زیبا و روان بازنویسی کن. متن بازنویسی شده باید خواناتر، جذاب‌تر و منسجم‌تر باشد:\n\n${inputText}`;
             break;
         case Mode.FIND_PROVERBS:
-            basePrompt = `۱۰ ضرب المثل فارسی مرتبط با "${inputText}" را با استفاده از جستجوی گوگل پیدا کن. برای هر کدام، خود ضرب المثل، معنی و یک مثال کاربردی ارائه بده. پاسخ را به صورت یک رشته JSON با ساختار زیر برگردان: [{ "proverb": "...", "meaning": "...", "usage": "..." }]`;
+            basePrompt = `۱۰ ضرب‌المثل کاملاً مازندرانی (گویش مازنی) مرتبط با «${inputText}» را با استفاده از جستجوی وب پیدا کن.
+نکات مهم:
+- فقط ضرب‌المثل‌های اصیل مازندرانی را برگردان، نه معادل‌ها یا ترجمه‌های فارسیِ آن‌ها
+- اگر برای برخی مفاهیم ضرب‌المثل مازندرانی معتبر پیدا نکردی، تعداد آیتم‌ها را کمتر کن؛ ولی هرگز ضرب‌المثل فارسیِ سراسری را جایگزین نکن
+- متنِ خودِ ضرب‌المثل باید دقیقاً به گویش مازندرانی نوشته شود (با خط فارسی، ولی واژگان و ساختار مازندرانی)
+
+برای هر مورد، خروجی را به صورت یک آرایه JSON از اشیاء با کلیدهای زیر برگردان:
+- "proverb": خودِ ضرب‌المثل به گویش مازندرانی
+- "meaning": توضیح معنی به زبان فارسی معیار و روان
+- "usage": یک جملهٔ نمونهٔ فارسی که نشان بدهد این ضرب‌المثل در چه موقعیتی به‌کار می‌رود
+
+پاسخ را دقیقاً در قالب یک JSON معتبر با ساختار زیر برگردان:
+[{ "proverb": "...", "meaning": "...", "usage": "..." }]`;
             break;
         default:
             throw new Error('Invalid mode selected');
@@ -295,7 +307,14 @@ function generatePrompt(mode: Mode, inputText: string, selectedTags?: PromptTag[
     }
 
     // Global language enforcement
-    if (mode === Mode.GENERATE_HEADLINES || mode === Mode.FIND_POEMS || mode === Mode.FIND_PROVERBS) {
+    if (mode === Mode.FIND_PROVERBS) {
+        // For Mazandarani proverbs: proverb in Mazandarani, explanations in Farsi
+        basePrompt += `\n\nدر خروجی JSON:
+- مقدار فیلد "proverb" باید حتماً به گویش مازندرانی نوشته شود (نه فارسی معیار)
+- مقادیر فیلدهای "meaning" و "usage" باید به فارسی معیار، روان و قابل‌فهم برای عموم باشند
+- نام کلیدهای JSON (proverb, meaning, usage) را دقیقاً به همین صورت و به زبان انگلیسی حفظ کن و هرگز آن‌ها را ترجمه نکن.
+از نوشتن متن انگلیسی در مقادیر متنی خودداری کن، مگر در نام‌های خاص یا اصطلاحات غیرقابل‌جایگزین.`;
+    } else if (mode === Mode.GENERATE_HEADLINES || mode === Mode.FIND_POEMS) {
         // JSON modes: keep keys in English, but all text values must be Farsi
         basePrompt += `\n\nدر تمام مقادیر متنی داخل JSON، متن را کاملاً به زبان فارسی روان و طبیعی بنویس. نام کلیدهای JSON (مانند poem, poet, meaning, usage) را دقیقاً مطابق الگوی داده‌شده و به زبان انگلیسی نگه دار و آن‌ها را ترجمه نکن. از نوشتن جملات یا توضیحات انگلیسی در مقادیر متنی خودداری کن، مگر در نام‌های خاص یا اصطلاحات واقعاً غیرقابل‌جایگزین.`;
     } else {

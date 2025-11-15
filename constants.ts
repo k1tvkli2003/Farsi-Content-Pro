@@ -41,7 +41,7 @@ export const MODES: ModeOption[] = [
   {
     id: Mode.FIND_PROVERBS,
     title: 'گوهر مازنی',
-    description: 'یافتن ضرب‌المثل‌های فارسی مرتبط با موضوعات',
+    description: 'یافتن ضرب‌المثل‌های مازندرانی (گویش مازنی) مرتبط با موضوعات',
     icon: FormatQuoteIcon,
     placeholder: 'موضوعی مانند "صبر" یا "دوستی" را وارد کنید...',
     supportsThinkingMode: true,
