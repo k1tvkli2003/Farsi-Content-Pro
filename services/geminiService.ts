@@ -29,9 +29,9 @@ let hasHealthCheckRun = false;
 // Indices of clients that have been marked unhealthy during this session (runtime key errors)
 const disabledClientIndices = new Set<number>();
 
-// Once we discover that the primary model (gemini-2.5-pro) is unstable but flash works,
+// Once we discover that the primary model (gemini-3-pro-preview) is unstable but flash works,
 // we permanently switch all remaining calls in this session to gemini-2.5-flash.
-const PRIMARY_MODEL = 'gemini-2.5-pro';
+const PRIMARY_MODEL = 'gemini-3-pro-preview';
 const FALLBACK_MODEL = 'gemini-2.5-flash';
 let forceFlashForAllCalls = false;
 
