@@ -1,81 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Farsi-Content-Pro
 
-# Farsi Content Pro - AI-Powered Persian Content Generator
+AI-powered Persian content studio built on Gemini: headline generation,
+Persian poetry lookup, long-form article writing, text rewriting, Mazani
+proverbs, and an integrated chatbot -- with live streaming preview and a
+text-refinement panel.
 
-ابزار تولید محتوای هوشمند فارسی با قدرت Gemini AI
+## What's inside
 
-## ✨ ویژگی‌های کلیدی
+- `App.tsx`, `components/` (Header, ModeSelector, InputPanel, OutputPanel,
+  Chatbot, icons) -- mode picker plus editing workspace.
+- `services/geminiService.ts` -- all Gemini calls in one boundary.
+- `constants.ts`, `types.ts`, `index.css`, Tailwind + Vite + TS scaffolding.
 
-### 🎯 حالت‌های تولید محتوا
-- **سازنده عنوان**: تولید عناوین جذاب برای مقالات
-- **جستجوی شعر**: یافتن اشعار فارسی مرتبط با موضوع
-- **نویسنده مقاله**: تولید متن ادبی منسجم (پیش‌فرض ۲۵ خط، قابل افزایش)
-- **بازنویسی متن**: بهبود و بازنویسی متون فارسی
-- **گوهر مازنی**: یافتن ضرب‌المثل‌های فارسی
+## Tech stack
 
-### 🚀 قابلیت‌های پیشرفته
-- ✅ **پیش‌نمایش زنده**: مشاهده متن در حال تولید به‌صورت لحظه‌ای
-- ✅ **پنل اصلاح متن**: امکان ویرایش و بازنویسی خروجی با دستورات دلخواه
-- ✅ **چت‌بات Gemini**: چت تعاملی با پاسخ‌های فارسی ادبی
-- ✅ **محدودیت هوشمند ۲۵ خط**: برای مقالات کوتاه، با امکان دور زدن خودکار
-- ✅ **خروجی ادبی فارسی**: همه پاسخ‌ها با نثر روان و ادبی
+React 19, Vite 6, TypeScript, Tailwind 3, `@google/genai`. Needs a Gemini
+API key at runtime.
 
-## 🛠️ نصب و راه‌اندازی
+## Getting started
 
-**پیش‌نیازها:** Node.js 18+
+```bash
+npm install
+npm run dev
+```
 
-### مراحل نصب:
+Standard flow: install, set the key, run. `npm run build`
+for production.
 
-1. نصب وابستگی‌ها:
-   ```bash
-   npm install
-   ```
+## Status
 
-2. ایجاد فایل `.env` و تنظیم کلید API:
-   ```env
-   GEMINI_API_KEY=your_api_key_here
-   ```
-
-3. اجرای برنامه:
-   ```bash
-   npm run dev
-   ```
-
-برنامه روی `http://localhost:3000` اجرا می‌شود.
-
-## 📖 راهنمای استفاده
-
-### تولید مقاله با طول دلخواه
-- **مقاله کوتاه (۲۵ خط)**: فقط موضوع را وارد کنید
-- **مقاله طولانی**: در متن ورودی عبارت "طولانی"، "مفصل" یا "جامع" را اضافه کنید
-
-### استفاده از پنل اصلاح
-1. پس از تولید متن، دکمه "✨ اصلاح یا تغییر متن" ظاهر می‌شود
-2. دستور اصلاح خود را وارد کنید (مثال: "این متن را رسمی‌تر کن")
-3. متن جدید در همان پنل به‌روزرسانی می‌شود
-
-### استفاده از چت‌بات
-1. روی دکمه چت شناور در گوشه پایین سمت چپ کلیک کنید
-2. سوال یا درخواست خود را بنویسید
-3. پاسخ‌های ادبی فارسی را دریافت کنید
-
-## 🎨 تکنولوژی‌ها
-- **React 19** + **TypeScript**
-- **Vite** - ابزار توسعه سریع
-- **Gemini 2.5 Pro** - مدل هوش مصنوعی Google
-- **Tailwind CSS** - استایل‌دهی
-
-## 📝 ویژگی‌های فنی
-- استریمینگ پاسخ‌ها برای تجربه کاربری بهتر
-- مدیریت state پیشرفته با React Hooks
-- پشتیبانی کامل از TypeScript
-- طراحی ریسپانسیو و مدرن
-- بدون استفاده از Thinking Mode برای سرعت بیشتر
-
-## 🔗 لینک‌های مفید
-View in AI Studio: https://ai.studio/apps/drive/1XGXeoiRKd0opXkxzkyPZcIybestsvsrw
-
-## 📄 مستندات بیشتر
-برای جزئیات کامل تغییرات، فایل [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) را مطالعه کنید.
+Working single-purpose app. ChefMom is its cooking-domain
+sibling, built on the same skeleton.
